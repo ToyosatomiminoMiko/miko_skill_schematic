@@ -17,13 +17,13 @@ MLP 前向 / 反向传播双栏示意图,2900×1800:
 
 ## 安装
 
-技能目录固定为 `~/.dsh/skills/schematic-diagrams`(DSH 从这里发现技能):
+技能目录固定为 `~/.dsh/skills/miko-skill-schematic`(DSH 从这里发现技能):
 
 ```sh
-git clone https://github.com/ToyosatomiminoMiko/miko_skill_schematic.git ~/.dsh/skills/schematic-diagrams
+git clone https://github.com/ToyosatomiminoMiko/miko_skill_schematic.git ~/.dsh/skills/miko-skill-schematic
 ```
 
-项目级安装可放到 `<项目>/.dsh/skills/schematic-diagrams`。
+项目级安装可放到 `<项目>/.dsh/skills/miko-skill-schematic`。
 
 依赖:Python 3.8+ 与 Pillow(在 12.3.0 上验证)。中文标签需要系统装有 Noto Sans CJK
 (候选路径见 `scripts/canvas.py` 的 `_FONT_CANDIDATES`);找不到会退化到默认字体,
@@ -32,7 +32,7 @@ git clone https://github.com/ToyosatomiminoMiko/miko_skill_schematic.git ~/.dsh/
 ## 用法
 
 ```sh
-S=~/.dsh/skills/schematic-diagrams
+S=~/.dsh/skills/miko-skill-schematic
 python3 "$S/scripts/circuit_cla.py"           # 重绘电路范例 -> $S/assets/circuit_cla.png
 python3 "$S/scripts/nn_forward_backward.py"   # 重绘神经网络范例 -> $S/assets/nn_forward_backward.png
 python3 "$S/scripts/verify.py" all --logic    # 几何 + CLA 逻辑仿真自检

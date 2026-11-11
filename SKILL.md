@@ -1,5 +1,5 @@
 ---
-name: schematic-diagrams
+name: miko-skill-schematic
 description: 用纯 Python+Pillow 画白底线框技术图:电路原理图(逻辑门/数字电路/框图)与神经网络示意图(前向传播、反向传播、梯度)。当用户要"画电路图/原理图/门级图/逻辑门/接线图",或"画神经网络结构/前向传播/反向传播/梯度/模型架构图",或修改已有此类图时使用。
 whenToUse: 用户要求生成或修改电路原理图、逻辑门图、数字电路接线图、神经网络结构图、前向/反向传播示意图时;只做线框/矢量风示意图,不做照片级、风景、ASCII 艺术。
 ---
@@ -11,7 +11,7 @@ whenToUse: 用户要求生成或修改电路原理图、逻辑门图、数字电
 
 ## 快速开始
 
-技能根记为 `S`(全局装:`~/.dsh/skills/schematic-diagrams`;项目级装:`<项目>/.dsh/skills/schematic-diagrams`)。
+技能根记为 `S`(全局装:`~/.dsh/skills/miko-skill-schematic`;项目级装:`<项目>/.dsh/skills/miko-skill-schematic`)。
 
 ```sh
 python3 "$S/scripts/circuit_cla.py"           # 8 位 CLA 电路原理图 -> $S/assets/circuit_cla.png
