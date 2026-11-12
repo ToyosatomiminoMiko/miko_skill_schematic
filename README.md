@@ -56,6 +56,7 @@ python3 "$S/scripts/circuit_cla.py" out.png   # 指定输出路径
 | `scripts/verify.py` | 自检:穿门体/节点、共线短路、断线、文字重叠/出界 + CLA 逻辑仿真 |
 | `references/circuit-style.md` | 电路图规范:配色、栅格、门尺寸、布线原则、自检清单 |
 | `references/nn-style.md` | 神经网络图规范:两栏版式、节点几何、公式写法 |
+| `references/observations.md` | 偶然观察记录:未验证的发现先放这里,不是规则集 |
 | `assets/` | 两张参考成图,改图时先看它们 |
 
 ## 自检
