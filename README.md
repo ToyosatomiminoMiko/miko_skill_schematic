@@ -1,7 +1,8 @@
 # miko_skill_schematic
 
 DSH 技能:用纯 Python + Pillow 画**白底线框**技术图——电路原理图(逻辑门/数字电路/接线图)
-与神经网络示意图(前向传播、反向传播、梯度)。除 Pillow 外无依赖,不碰 matplotlib / cairo。
+与神经网络示意图(前向传播、反向传播、梯度)。线框与中文标注只用 Pillow;公式由**可选的**
+matplotlib mathtext 排版(一条 `pip install matplotlib`,不装也能画图,只是公式只能当文本写)。
 
 共享画布底座 + 两个可跑范例 + 风格规范 + 几何/逻辑自检;新图照范例改,不要从零画。
 
@@ -27,7 +28,8 @@ git clone https://github.com/ToyosatomiminoMiko/miko_skill_schematic.git ~/.dsh/
 
 依赖:Python 3.8+ 与 Pillow(在 12.3.0 上验证)。中文标签需要系统装有 Noto Sans CJK
 (候选路径见 `scripts/canvas.py` 的 `_FONT_CANDIDATES`);找不到会退化到默认字体,
-中文会显示成方块,但不会报错。
+中文会显示成方块,但不会报错。公式排版需要 `pip install matplotlib`(mathtext 后端,
+在 3.11.2 上验证)——只用 `label` 画文字时不需要它。
 
 ## 用法
 
@@ -48,7 +50,7 @@ python3 "$S/scripts/circuit_cla.py" out.png   # 指定输出路径
 | 文件 | 说明 |
 | --- | --- |
 | `SKILL.md` | 技能说明:快速开始、最小模板、canvas 速查、工作流、硬约束 |
-| `scripts/canvas.py` | 画布底座:2× 超采样、门符号、节点/箭头/虚线、中文标注、标题块、图例、PNG 导出 |
+| `scripts/canvas.py` | 画布底座:2× 超采样、门符号、节点/箭头/虚线、中文标注、标题块、图例、公式排版、PNG 导出 |
 | `scripts/circuit_cla.py` | 范例:8 位超前进位加法器门级原理图(通道布线、门队列的完整套路) |
 | `scripts/nn_forward_backward.py` | 范例:MLP 前向/反向传播双栏对照图 |
 | `scripts/verify.py` | 自检:穿门体/节点、共线短路、断线、文字重叠/出界 + CLA 逻辑仿真 |
@@ -66,6 +68,8 @@ python3 "$S/scripts/circuit_cla.py" out.png   # 指定输出路径
 
 - **纯 Pillow**:2 倍分辨率绘制 + LANCZOS 缩小,得到免费的 4× 样本抗锯齿;
   线宽、坐标都按最终像素取整,换机器渲染结果一致。
+- **公式可选后置**:mathtext 把 LaTeX 子集排成 RGBA 位图,在 2× 画布上贴、随线条一起
+  缩小,清晰度与文字一致;后端集中在 `_formula_raster()`,换 Typst/MathJax 只改这一个函数。
 - **坐标即最终像素**;绘制顺序 = 登记顺序,结点其次、文字最后,门体要压线头就自己延后登记。
 - **只出 PNG**:无损,体积约为同图 P6 PPM 的 1/30,仓库里不存中间格式。
 - **风格单点**:纸色/墨色/填充/线宽集中在 `canvas.STYLE`;各图语义色留在各自文件开头。

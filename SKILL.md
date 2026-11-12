@@ -1,13 +1,15 @@
 ---
 name: miko-skill-schematic
-description: 用纯 Python+Pillow 画白底线框技术图:电路原理图(逻辑门/数字电路/框图)与神经网络示意图(前向传播、反向传播、梯度)。当用户要"画电路图/原理图/门级图/逻辑门/接线图",或"画神经网络结构/前向传播/反向传播/梯度/模型架构图",或修改已有此类图时使用。
+description: 用 Python+Pillow 画白底线框技术图:电路原理图(逻辑门/数字电路/框图)与神经网络示意图(前向传播、反向传播、梯度);公式用 mathtext 真排版(可选 matplotlib)。当用户要"画电路图/原理图/门级图/逻辑门/接线图",或"画神经网络结构/前向传播/反向传播/梯度/模型架构图",或修改已有此类图时使用。
 whenToUse: 用户要求生成或修改电路原理图、逻辑门图、数字电路接线图、神经网络结构图、前向/反向传播示意图时;只做线框/矢量风示意图,不做照片级、风景、ASCII 艺术。
 ---
 
 # 线框示意图:电路原理图 + 神经网络
 
-白底、线框、可直接进讲义/网页的高分辨率 PNG。纯 Python3 + Pillow,无其他依赖。
-共享画布底座 + 两个可跑范例 + 风格规范 + 几何自检;新图**照范例改**,不要从零画。
+白底、线框、可直接进讲义/网页的高分辨率 PNG。纯 Python3 + Pillow 画线框;公式用
+**可选的** matplotlib mathtext 排版(一条 `pip install matplotlib`;不装也能画图,
+只是公式只能当文本写)。共享画布底座 + 两个可跑范例 + 风格规范 + 几何自检;
+新图**照范例改**,不要从零画。
 
 ## 快速开始
 
@@ -78,6 +80,11 @@ c.junction(x, y, color, r=4)                      # 三线以上交汇处实心�
 c.terminal(x, y)                                  # 登记端子,自检才不会把图例/注释当断线
 c.label(x, y, "文本", color=INK, size=20, anchor="mm", weight="Bold")  # anchor 用 Pillow 语义
 c.hat_label(x, y, "y", color=INK, size=20)        # 只画单个 ŷ 时的组字;长字符串里的 ŷ 由 label 自动组字
+c.formula(x, y, r"$p=\sigma(Z_2)$", color=INK, size=17, anchor="lm", valign="center")
+                                                  # 真公式(mathtext);anchor 只取首字母 l/m/r,
+                                                  # valign="center" 墨迹盒中心对齐 y;"baseline" 让数学基线落在 y
+c.rich_line(x, y, (("t", "梯度:"), ("f", r"$\delta=\frac{p-y}{n}$")), INK, 17)
+                                                  # 一行"中文 + 公式"混排,按基线对齐,返回行末 x
 c.save("out.png")                                 # 坐标即最终像素,SS 自动处理
 ```
 
@@ -85,6 +92,8 @@ c.save("out.png")                                 # 坐标即最终像素,SS 自
 
 ```python
 from canvas import title_block, gate_legend, edge_arrow, node_to_point, point_to_node, layer_ys, text_width, trim, save_asset
+from canvas import formula_width, formula_height, formula_baseline  # 公式墨迹宽/高/基线(最终像素)
+from canvas import text_baseline, rich_width      # label 行中线->文字基线;整条混排行的宽度
 title_block(c, 44, 50, "标题", "副标题")        # 左上标题块;副标题可省,自动排在 1.4 倍字号处
 gate_legend(c, 792, 132, (("与门","and"),("或门","or"),("异或门","xor")), title="门符号图例")
 edge_arrow(c, n0, n1, color, dash=None)        # 节点圆心 -> 节点圆心,贴圆外缘 r+1.5;半径变了传 r=R
@@ -95,7 +104,40 @@ trim(p0, p1, r0=0, r1=0)                      # 底层几何:两端各缩进半�
 save_asset(build(), "my.png")                  # 写技能 ASSETS_DIR(assets/)并打印;out= 可覆盖
 ```
 
-绘制顺序固定:线/形按登记顺序 → 结点 → 文字。**线先画、门/节点后画、字最后**,不要自己在 PIL 上调。
+绘制顺序固定:线/形按登记顺序 → 结点 → 文字 → 公式位图。**线先画、门/节点后画、字最后**,不要自己在 PIL 上调。
+
+## 公式排版(mathtext,可选依赖)
+
+画公式的脚本需要 `pip install matplotlib`;只画线框/文字的脚本不需要它——canvas 对
+matplotlib 的 import 是惰性的,没装只在调用 `formula()` 时给出可读报错。
+
+```python
+c.formula(560, 300, r"$Z_1 = XW_1 + b_1$", INK, 18, anchor="mm")      # 整条公式
+c.rich_line(60, 420, (("t", "反向:"), ("f", r"$\mathrm{d}z_2=(p-y)/n$"),
+                      ("t", "   ← 断点在这")), INK, 17)                 # 中文 + 公式混排
+w = formula_width(r"$a_1=\mathrm{ReLU}(Z_1)$", 17)                   # 排版推进量
+```
+
+- **字体集**:默认 `stixsans`(无衬线数学,配思源黑体);`dejavusans` 更粗、`stix` 衬线、
+  `cm` Computer Modern。换字体只传 `formula(..., fontset="cm")`。
+- **字号**:`size` 与 `label` 同单位(最终像素 em)。数学字形 x-height 比中文小,同行
+  混排时公式可比中文大 1px;整条公式与正文同级用 17~18。
+- **基线**:`rich_line` 内部是 `label(anchor="ls")` + `formula(valign="baseline")`;自己
+  混排时照这个组合写。多行公式要对齐也用 baseline(行距按 `formula_height` 算)。
+- **把旧图的 label 换成公式**:label 的 y 是行中线,`formula(valign="baseline")` 的 y 是
+  基线,直接换会整行上下跳;先 `y = text_baseline(y, size)` 换算。整条混排行要居中/右对齐
+  用 `rich_width(parts, size)` 算宽。
+- **排法约定**:变量斜体(`Z_1, W_1, x, n`);多字母函数/算子正体(`\mathrm{ReLU}`、
+  `\mathrm{sum}`、`\max`、`\log`);代码变量 d 用正体(`\mathrm{d}z_2`);矩阵乘用并置
+  `XW_1`(不写 `@`);转置 `^\top`;元素乘 `\odot`;指示函数 `\mathbf{1}[\cdot]`。
+- **子集限制**(mathtext 不是 LaTeX):无 `\begin{aligned}`(多行就一行一条)、无
+  `\text{中文}`、无 `\displaystyle`、无 `\stackrel`、无矩阵环境;其余常用符号(\frac、
+  \dfrac、上下标、\partial、\hat、\odot、\mathbf、\mathbb、\mathcal、\sqrt、\sum 上下限、
+  \left(\right)、\top、\leftarrow)都在。
+- **升级到论文级排版**:画图脚本只认 `formula()`/`rich_line()`,后端集中在 canvas.py 的
+  `_formula_raster()`——要 Typst(多行 aligned + 中文同图)或 MathJax(原样 LaTeX)时替换
+  这一个函数即可,`verify.py` 与所有图脚本不用动。
+
 **风格只改一处**:纸色/墨色/填充/线宽在 `canvas.STYLE`(键 `paper/ink/fill/sub/wire_w`;导入时绑定,改完重新运行);各图的语义色(`FWD/BWD`、`NET_*`)在各自文件开头,布局坐标不要跟着配色一起动。
 
 ## 硬约束与常见坑
@@ -104,8 +146,12 @@ save_asset(build(), "my.png")                  # 写技能 ASSETS_DIR(assets/)�
 - **扇出交点**画 `junction()` 实心圆;没有圆点的交叉线约定为不相连。
 - **同网络同色、不同网络异色**(≤7 色);颜色是读图的锚,不要随意换。
 - **断线**是最严重错误:每个端点必须接引脚/别的线段/登记端子;`verify.py` 的"悬空端点"必须为 0。
-- 中文标签由 Noto Sans CJK 自动挑选;`.ttc` 按 index=2 取简体字面并设字重。公式上标用 `^(l)`。
-- **禁用豆腐块字符**(Noto CJK 实测缺字):`ᵀ ⊤ ⟵ ⟶ ˡ ⁻ ⁱ ₀₁₂`。`ŷ` 直接写即可:`Canvas.label` 会自动拆成 y+手画帽子(Noto CJK 无 U+0177),不要自己重写排版。
+- 中文标签由 Noto Sans CJK 自动挑选;`.ttc` 按 index=2 取简体字面并设字重。
+- **公式用 `c.formula()` / `c.rich_line()`,不要再拿字符串拼 `^(l)`、`W1.T`、`1/(1+e^(-z))`**:mathtext 会给出真分式、真上下标、斜体变量、∂/⊙/∇ 等。公式里**不要放中文**(mathtext 没有 CJK 字面),中文留在 `label` 或 `rich_line` 的 "t" 段。
+- mathtext 只支持子集:**不支持 `\begin{aligned}` 多行对齐、`\displaystyle`、`\stackrel`、矩阵环境**;17~18px 行内分式优先写成 `(p-y)/n` 斜杠式(`\frac` 会挤),24px 以上的展示式再用 `\dfrac`。
+- 不装 matplotlib 时 `formula()` 会给出可读报错,`label` 照旧可用;`verify.py` 已把公式
+  位图的墨迹盒纳入重叠/出界检查(和文字一起两两比较),但"公式是否被别的线穿过"仍需目检。
+- **禁用豆腐块字符**(Noto CJK 实测缺字):`ᵀ ⊤ ⟵ ⟶ ˡ ⁻ ⁱ ₀₁₂`——纯文本标签里别用;公式里用 `^\top`、`\leftarrow` 代替。`ŷ` 在纯文本里直接写(`Canvas.label` 会自动组字),在公式里写 `\hat{y}`。
 - 版面:标题左上、图例右上、说明按 30px 行距换行;正文字号 ≥16(次要注释可 15),标题 36~40 Bold。
 - 只做示意/线框;不做照片级、风景、ASCII 艺术。
 
@@ -113,7 +159,7 @@ save_asset(build(), "my.png")                  # 写技能 ASSETS_DIR(assets/)�
 
 | 路径 | 内容 |
 | --- | --- |
-| `scripts/canvas.py` | 画布底座 + 公共助手:超采样、门符号、节点箭头、标题块、字体、PNG 导出、轨道分配 |
+| `scripts/canvas.py` | 画布底座 + 公共助手:超采样、门符号、节点箭头、标题块、字体、公式排版(mathtext 可选后端)、PNG 导出、轨道分配 |
 | `scripts/circuit_cla.py` | 电路范例:8 位超前进位加法器门级原理图(布局套路可照搬) |
 | `scripts/nn_forward_backward.py` | 神经网络范例:MLP 前向/反向传播双栏对照图 |
 | `scripts/verify.py` | 自检:穿门体/节点、共线、断线、文字重叠/出界、CLA 逻辑仿真 |

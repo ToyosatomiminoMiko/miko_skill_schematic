@@ -6,7 +6,8 @@
       1) 导线(含虚线段)从门体/节点内部穿过 => 视觉上等于接到了不该接的引脚;
       2) 两条不同网络的线共线重叠(同 y 或同 x 且区间重叠)=> 看起来就是短接;
       3) 悬空端点:端点既不接别的线、也不贴门体、也不是登记过的端子 => 断线;
-      4) 文字互相重叠、文字超出画布边界 => 标注被压住或截断;
+      4) 文字/公式互相重叠、超出画布边界 => 标注被压住或截断(公式按渲染时的
+         位图墨迹盒算,和文字的 textbbox 一起两两比较);
       5) (仅电路图)按图上的拓扑仿真全部输入,确认画出来的电路逻辑正确。
 
 为什么:
@@ -35,7 +36,7 @@ import sys
 
 from PIL import Image, ImageDraw
 
-from canvas import SS
+from canvas import SS, formula_baseline, formula_height, formula_width
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
@@ -69,6 +70,7 @@ class Model(object):
                 self.circles.append(((x0 + x1) / 2.0, (y0 + y1) / 2.0, (x1 - x0) / 2.0))
         self.terminals = canvas.terminals
         self.labels = canvas._labels
+        self.formulas = getattr(canvas, "_formulas", [])
 
 
 # ---------------------------------------------------------------- 基础判定
@@ -215,8 +217,19 @@ def check_dangling(model):
     return bad
 
 
+def _formula_box(fx, fy, tex, size, anchor, valign, fontset):
+    """公式墨迹盒(SS 坐标)。公式是渲染时贴的位图,label 那套 textbbox 量不到。"""
+    w = formula_width(tex, size, fontset) * SS
+    h = formula_height(tex, size, fontset) * SS
+    ax = anchor[0] if anchor else "l"
+    x0 = fx * SS if ax == "l" else (fx * SS - w / 2.0 if ax == "m" else fx * SS - w)
+    y0 = (fy * SS - h / 2.0 if valign == "center"
+          else fy * SS - formula_baseline(tex, size, fontset) * SS)
+    return (x0, y0, x0 + w, y0 + h)
+
+
 def check_labels(model):
-    """文字重叠 / 文字超出画布。返回 (重叠对, 出界的标签)。"""
+    """文字/公式重叠、超出画布。返回 (重叠对, 出界的项)。"""
     probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
     boxes = []
     for x, y, s, color, size, anchor, weight in model.labels:
@@ -227,6 +240,12 @@ def check_labels(model):
         except Exception:
             continue
         boxes.append((s, box))
+    for fx, fy, tex, color, size, anchor, valign, fontset in model.formulas:
+        try:
+            box = _formula_box(fx, fy, tex, size, anchor, valign, fontset)
+        except Exception:
+            continue                     # 公式排不出来时渲染会报错,这里不重复报
+        boxes.append(("公式 " + tex, box))
     W, H = model.w * SS, model.h * SS
     overlaps = []
     for i in range(len(boxes)):
@@ -311,8 +330,9 @@ def verify_module(which, check_logic=False):
     errors = 0
     warnings = 0
 
-    print("== 模块 %s: wires=%d polys=%d circles=%d labels=%d =="
-          % (which, len(model.wires), len(model.polys), len(model.circles), len(model.labels)))
+    print("== 模块 %s: wires=%d polys=%d circles=%d labels=%d formulas=%d =="
+          % (which, len(model.wires), len(model.polys), len(model.circles),
+             len(model.labels), len(model.formulas)))
 
     through = check_wire_through_body(model)
     print("-- 线穿门体/节点: %s" % (("无" if not through else "%d 处" % len(through))))

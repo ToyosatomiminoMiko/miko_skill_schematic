@@ -13,6 +13,9 @@
       自己延后登记(circuit_cla.py 的 gate_queue),canvas 不会自动把门体排到最后。
     - 虚线自己采样实现:Pillow 没有虚线 API;正交折线按累计弧长切段,可以让虚实
       节奏跨拐点连续。反向传播的梯度线必须虚线,否则与正向传播实线混在一起。
+    - 公式走可选后端:matplotlib 的 mathtext 把 LaTeX 子集排成 RGBA 位图,在 SS 倍
+      分辨率上排、贴进画布再和线条一起缩小,所以公式与文字一样清晰;matplotlib 是
+      **可选**依赖,import 是惰性的,只画线框/文字的脚本不需要它。
     - .ttc 中文字体要按 index 取"简体中文"字面,可变字体还要 set_variation_by_name,
       否则默认 Thin 字重细到看不清;找不到中文字体时退化为默认字体并写方块。
     - 只存 PNG:Pillow 的 PNG 是无损压缩,像素与裸 RGB 完全一致,体积却只有 P6 PPM
@@ -278,6 +281,113 @@ def text_width(s, size, weight="Regular"):
     return font(size, weight).getlength(s) / SS
 
 
+# ---------------------------------------------------------------- 公式排版
+# 公式用 matplotlib 的 mathtext 排(可选的 LaTeX 子集),不用系统装 TeX。
+# 为什么选它而不是 KaTeX / 真 LaTeX:KaTeX 只能在浏览器 DOM 里排版,服务端出图要拉
+# headless 浏览器;真 LaTeX 要 TeX Live/Tectonic(G 级系统依赖)。mathtext 只要一条
+# pip install matplotlib,并且给出 width/height/depth 三个排版度量,基线可以对得很准。
+# 想换更高档的后端(Typst / MathJax)时,只要替换 _formula_raster 的实现,Canvas 的
+# formula()/rich_line() 接口不用动。
+
+_FORMULA_FONTSET = "stixsans"   # STIX Sans:无衬线数学,和思源黑体同气质;另有
+                                # "dejavusans"(更粗)、"stix"(衬线)、"cm"(Computer Modern)
+_FORMULA_CACHE = {}             # (tex, size, color, fontset) -> 位图与基线
+
+
+def _norm_color(color):
+    """把 RGB 元组 / 颜色名 / #hex 统一成 RGB 元组,顺便让缓存键可哈希。"""
+    if isinstance(color, str):
+        from matplotlib.colors import to_rgba     # 只对字符串颜色付 import 代价
+        return tuple(int(round(v * 255)) for v in to_rgba(color)[:3])
+    return tuple(color[:3])
+
+
+def _formula_raster(tex, size, color, fontset=_FORMULA_FONTSET):
+    """把公式排成 SS 倍分辨率的 RGBA 位图,返回 (位图, 基线距图顶, 宽, 高)。
+
+    为什么在 SS 倍上排:位图贴进 2x 画布后跟线条一起 LANCZOS 缩小,抗锯齿与文字一致;
+    若先缩到最终尺寸再贴,公式会比同一行的中文"糊一档"。坐标单位都是 SS 像素。
+    """
+    key = (tex, float(size), _norm_color(color), fontset)
+    hit = _FORMULA_CACHE.get(key)
+    if hit is not None:
+        return hit
+    try:                                    # 惰性 import:没有 matplotlib 也能画别的图
+        import numpy as np
+        import matplotlib
+        matplotlib.use("Agg")               # 只要光栅后端,不碰 GUI
+        from matplotlib.font_manager import FontProperties
+        from matplotlib.mathtext import MathTextParser
+    except ImportError as e:
+        raise RuntimeError(
+            "公式排版需要 matplotlib(mathtext 后端):pip install matplotlib\n"
+            "不装也能画图,只是 formula() / rich_line() 用不了。") from e
+
+    matplotlib.rcParams["mathtext.fontset"] = fontset
+    try:
+        r = MathTextParser("agg").parse(
+            tex, dpi=72.0 * SS, prop=FontProperties(size=size))
+    except Exception as e:                  # 语法错(如 \begin{aligned})要报清楚是哪条
+        raise ValueError("公式解析失败 %r(注意 mathtext 不支持 aligned/CJK):%s"
+                         % (tex, e)) from e
+
+    mask = Image.fromarray(np.asarray(r.image), "L")
+    rgba = Image.new("RGBA", mask.size, _norm_color(color) + (255,))
+    rgba.putalpha(mask)
+    bb = mask.getbbox()
+    if bb is None:                          # 空公式:给 1x1 全透明,调用方不用特判
+        out = (Image.new("RGBA", (1, 1), (0, 0, 0, 0)), 0.0, 1.0, 1.0)
+        _FORMULA_CACHE[key] = out
+        return out
+    rgba = rgba.crop(bb)
+    # mathtext 的 height 含 descent、depth 是基线以下的像素数:
+    #   基线距图顶 = height - depth - 墨迹盒上边(全部是 SS 像素)
+    baseline = r.height - r.depth - bb[1]
+    out = (rgba, baseline, rgba.width, rgba.height)
+    _FORMULA_CACHE[key] = out
+    return out
+
+
+def formula_width(tex, size, fontset=_FORMULA_FONTSET):
+    """公式墨迹宽度(最终分辨率像素),与 text_width 同单位,用于混排推进。"""
+    return _formula_raster(tex, size, INK, fontset)[2] / float(SS)
+
+
+def formula_height(tex, size, fontset=_FORMULA_FONTSET):
+    """公式墨迹高度(最终分辨率像素)。"""
+    return _formula_raster(tex, size, INK, fontset)[3] / float(SS)
+
+
+def formula_baseline(tex, size, fontset=_FORMULA_FONTSET):
+    """数学基线距位图顶的距离(最终分辨率像素),手工混排/自检时对齐公式用。"""
+    return _formula_raster(tex, size, INK, fontset)[1] / float(SS)
+
+
+def text_baseline(y, size, weight="Regular"):
+    """把 label(anchor="lm"/"mm")的行中线 y 换算成文字基线(最终像素)。
+
+    为什么需要:label 的 y 是行中线,而 formula(valign="baseline")/rich_line 的 y 是
+    基线;同一个位置要从 label 换成 formula 时,先过这个函数才不会整行上下跳。
+    Pillow 的行中线 = (字顶+字底)/2,其中字顶 = 基线 - ascent、字底 = 基线 + descent,
+    所以 基线 = 行中线 + (ascent - descent)/2。
+    """
+    ascent, descent = font(size, weight).getmetrics()
+    return y + (ascent - descent) / (2.0 * SS)
+
+
+def rich_width(parts, size, fontset=_FORMULA_FONTSET, gap=2.5):
+    """rich_line 一行的总宽度(最终像素),用于把整行居中/右对齐。"""
+    total = 0.0
+    for kind, s in parts:
+        if kind == "t":
+            total += text_width(s, size)
+        elif kind == "f":
+            total += formula_width(s, size, fontset) + 2 * gap
+        else:
+            raise ValueError("rich_width 的 kind 只能是 't' 或 'f',收到 %r" % (kind,))
+    return total
+
+
 # ---------------------------------------------------------------- 画布
 
 
@@ -290,6 +400,7 @@ class Canvas(object):
         self._ops = []       # 线 / 形:按登记顺序画
         self._dots = []      # 结点:画在形之后,避免被门体填充盖住
         self._labels = []    # 文字:永远最后画
+        self._formulas = []  # 公式位图:和文字一样最后贴
         self.terminals = []  # 端子坐标:几何自检用来区分"端子"与"断线"
 
     # ---- 登记接口
@@ -426,6 +537,41 @@ class Canvas(object):
         self.stroke([(cx - half, top + 3), (cx, top - 3), (cx + half, top + 3)], color, w)
         return (cx, top - 3)
 
+    def formula(self, x, y, tex, color=INK, size=17, anchor="lm",
+                valign="center", fontset=_FORMULA_FONTSET):
+        """登记一条 LaTeX 公式(如 "$\\frac{a}{b}$"),渲染时贴成与文字同样清晰的位图。
+
+        tex 要带 $...$;只支持 mathtext 的子集:\\frac / \\dfrac、上下标、\\partial、
+        \\hat、\\odot、\\mathbf、\\mathbb、\\sqrt、\\sum 上下限、\\left(\\right) 等;
+        不支持 \\begin{aligned} 多行对齐、\\text{中文}、\\displaystyle。
+        anchor 只取首字母(l/m/r)做水平对齐,所以 label 的 lm/mm/rm 可直接互换;
+        valign="center" 让墨迹盒垂直中点在 y(与 label 的 mm 观感一致),
+        valign="baseline" 让数学基线落在 y(与中文同行混排时用这个,中文配
+        label(anchor="ls"));两行公式要对齐时也用 baseline。
+        """
+        self._formulas.append((x, y, tex, color, size, anchor, valign, fontset))
+
+    def rich_line(self, x, y, parts, color=INK, size=17,
+                  fontset=_FORMULA_FONTSET, gap=2.5):
+        """一行"中文 + 公式"混排,按基线对齐,返回这一行结束的 x(最终像素)。
+
+        parts 是 [(kind, 内容)]:kind="t" 普通文字、kind="f" LaTeX 公式。中文字形用
+        label(anchor="ls"),公式用 formula(valign="baseline"),两边推进量都按最终
+        像素计,接缝不会跳。为什么要这个助手:反向传播卡片里 "反向:dz2 = ..." 这类
+        一行内中文与公式混排很常见,手算宽度最容易错位。
+        """
+        for kind, s in parts:
+            if kind == "t":
+                self.label(x, y, s, color, size, "ls")
+                x += text_width(s, size)
+            elif kind == "f":
+                self.formula(x + gap, y, s, color, size, anchor="l",
+                             valign="baseline", fontset=fontset)
+                x += formula_width(s, size, fontset) + 2 * gap
+            else:
+                raise ValueError("rich_line 的 kind 只能是 't' 或 'f',收到 %r" % (kind,))
+        return x
+
     # ---- 渲染
 
     @staticmethod
@@ -469,6 +615,13 @@ class Canvas(object):
             d.ellipse([x - r, y - r, x + r, y + r], fill=color)
         for x, y, s, color, size, anchor, weight in self._labels:
             d.text((x * SS, y * SS), s, font=font(size, weight), fill=color, anchor=anchor)
+        # 公式位图和文字同属"最上层",在 SS 倍画布上直接贴,最后和线条一起缩小。
+        for x, y, tex, color, size, anchor, valign, fontset in self._formulas:
+            rgba, baseline, fw, fh = _formula_raster(tex, size, color, fontset)
+            ax = anchor[0] if anchor else "l"
+            x0 = x * SS if ax == "l" else (x * SS - fw / 2.0 if ax == "m" else x * SS - fw)
+            y0 = y * SS - fh / 2.0 if valign == "center" else y * SS - baseline
+            img.paste(rgba, (int(round(x0)), int(round(y0))), rgba)
         return img.resize((self.w, self.h), Image.LANCZOS)
 
     # ---- 导出
